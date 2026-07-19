@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Baseline IAM role deployed to every target account via CloudFormation
+  StackSets. Grants EC2 instances SSM Session Manager access (keyless,
+  auditable) and an optional read-only cross-account audit role.
+  Deploy this once from a management/hub account and target it at
+  multiple member accounts + regions using AWS Organizations or a
+  static account list.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: aws-infra-automation
+    Description: Used as a prefix for all resource names.
+
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ─── SSM-enabled EC2 instance role (same purpose as the Terraform
+  #     ssm_role, but deployed org-wide as a consistent baseline) ─────
+  SSMInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${Environment}-ssm-baseline-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation-stackset
+
+  SSMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${ProjectName}-${Environment}-ssm-baseline-profile"
+      Roles:
+        - !Ref SSMInstanceRole
+
+  # ─── Cross-account, read-only audit role (lets the hub/security
+  #     account inspect resources in every member account without
+  #     giving out long-lived credentials) ────────────────────────────
+  CrossAccountAuditRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${Environment}-audit-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Sub "${ProjectName}-audit"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: ManagedBy
+          Value: cloudformation-stackset
+
+Outputs:
+  SSMInstanceProfileName:
+    Description: Attach this instance profile to any EC2 instance in this account for SSM access
+    Value: !Ref SSMInstanceProfile
+
+  CrossAccountAuditRoleArn:
+    Description: ARN of the read-only cross-account audit role
+    Value: !GetAtt CrossAccountAuditRole.Arn

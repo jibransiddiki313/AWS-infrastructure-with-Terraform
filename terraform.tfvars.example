@@ -1,0 +1,14 @@
+aws_region    = "ap-south-1"
+project_name  = "aws-infra-automation"
+owner_name    = "jibran-siddiki"
+environment   = "dev"
+vpc_cidr      = "10.0.0.0/16"
+instance_type = "t2.micro"
+app_port      = 3000
+
+# Leave empty to rely only on SSM Session Manager (recommended, no SSH key needed)
+key_name = ""
+
+asg_min_size         = 1
+asg_max_size         = 3
+asg_desired_capacity = 2
